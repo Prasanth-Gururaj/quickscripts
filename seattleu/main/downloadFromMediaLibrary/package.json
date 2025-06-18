@@ -7,10 +7,10 @@
   "type": "commonjs",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "mkdir -p dist && esbuild index.js --bundle --platform=node --format=cjs --outfile=dist/bundle.js --external:node:* --external:fs --external:path",
-    "package": "pkg . --targets node16-win-x64 --output dist/media-downloader.exe"
+    "build": "mkdir -p dist && esbuild index.mjs --bundle --platform=node --format=cjs --outfile=dist/bundle.js --external:node:* --external:fs --external:path",
+    "package": "pkg . --no-bytecode --debug --public-packages '*' --public --targets latest-win-x64 --output dist/media-downloader.exe"
   },
-  "author": "Pierce Harriz",
+  "author": "Rohit Nagotkar",
   "license": "ISC",
   "dependencies": {
     "node-fetch": "^2.7.0",
@@ -29,7 +29,8 @@
       "index.js",
       "../promptUI/**/*.mjs",
       "../promptUI/**/*.js",
-      "../../../../t4apiwrapper/**/*.js"
+      "../../../../t4apiwrapper/**/*.js",
+      "!build/**/*.test.js"
     ],
     "targets": [
       "node16-win-x64"

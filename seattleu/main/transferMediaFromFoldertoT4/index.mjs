@@ -2,7 +2,7 @@ import { Client, batcher } from '../../../../t4apiwrapper/t4.ts/esm/index.js'
 import { UI, exists } from '../promptUI/UI.mjs'
 import { readdir, mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import fetch from 'node-fetch'
+
 
 const rsUrl = 'https://cms.seattleu.edu/terminalfour/rs'
 
@@ -53,9 +53,19 @@ async function uploadMedia(folderPath, media, categoryID, description) {
   const fileNames = await readdir(folderPath)
   await batcher(fileNames, 10, 1000, async (fileName) => {
     try {
+      console.log(`Uploading ${fileName}...`)
+
       const _split = fileName.split('.')
       const type = getType(_split[_split.length - 1].toLocaleLowerCase())
       const imageID = await media.add({
+        file: `${folderPath}/${fileName}`,
+        categoryID,
+        fileName,
+        name: fileName,
+        type,
+        description
+      })
+      console.log({
         file: `${folderPath}/${fileName}`,
         categoryID,
         fileName,
