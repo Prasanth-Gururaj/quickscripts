@@ -24,7 +24,7 @@ lib-cov
 
 # Coverage directory used by tools like istanbul
 coverage
-
+python scripts/
 # nyc test coverage
 .nyc_output
 
@@ -80,3 +80,7 @@ dist/
 *migration.json
 *.zip
 *.jpg
+.DS_Store
+*/.DS_Store
+**/*.csv
+**/dist/
