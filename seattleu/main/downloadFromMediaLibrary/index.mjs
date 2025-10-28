@@ -18,10 +18,30 @@ import { zip } from 'zip-a-folder';
 import fetch from 'node-fetch';
 // Local imports with relative paths
 import { UI, exists } from '../promptUI/UI.mjs';
-import { Client, batcher } from '../../../../t4apiwrapper/t4.ts/esm/index.js';
+import { Client, batcher } from './node_modules/t4.ts/esm/index.js';
+
 
 const rsUrl = 'https://cms.seattleu.edu/terminalfour/rs';
-
+ 
+async function findRootParent(id, mediaCategory) {
+  console.log('Inside findRootParent, starting with id:', id);
+  let currentId = id;
+  try {
+    while (true) {
+      const cat = await mediaCategory.get(currentId, 'en');
+      console.log('findRootParent check:', cat);
+      if (!cat.parent) break;
+      currentId = cat.parent.id;
+    }
+  } catch (error) {
+    console.error('Error in findRootParent:', error);
+  }
+  console.log('Exiting findRootParent with id:', currentId);
+  return currentId;
+}
+ 
+ 
+ 
 // Fix IIFE with proper error handling
 const run = async () => {
   try {
@@ -35,10 +55,10 @@ const run = async () => {
     process.exit(1);
   }
 };
-
+ 
 // Start the application
 run();
-
+ 
 async function main(instance) {
   const config = await instance.start()
   const {  profile, mediaCategory, media } = new Client(rsUrl, config['t4_token'], 'en', fetch)
@@ -47,29 +67,38 @@ async function main(instance) {
   //   return null
   // }
   console.clear()
-
+ 
   const { firstName } = await profile.get()
   console.log(`Hello ${firstName},\n\nPlease enter the ID of the media category you'd like to download:`)
   const { mediaCategoryId } = await instance.ask([{
     name: 'mediaCategoryId', description: 'Enter media category ID, not name', required: true
   }])
-
+ 
+  const rootParentId = await findRootParent(mediaCategoryId, mediaCategory);
+ 
   const collectionObjs = []
-  const parseChildren = (path, children) => {
+ 
+ 
+  const parseChildren = (parentPath, children, parentName = null) => {
     children.forEach(child => {
-      const { id, name, children } = child
-      console.log(`Parsing ${name}...${id}....${path}`)
-      if (child.children.length > 0) parseChildren(`${path}/${name}/`, children)
-      collectionObjs.push({ id, name, path })
+      const { id, name, children: childChildren } = child
+      const currentPath = `${parentPath}/${name}`
+      console.log(`Parsing ${name} (Parent: ${parentName || 'Root'})...${id}....${currentPath}`)
+      collectionObjs.push({ id, name, parent: parentName, path: currentPath })
+      if (childChildren.length > 0) parseChildren(currentPath, childChildren, name)
     })
   }
+ 
   if (!await exists('./output/')) {
     await mkdir('./output/', { recursive: true })
   }
   try {
-    const children = (await mediaCategory.list(mediaCategoryId, 'en'))[0].children
-    const categoryName = (await mediaCategory.list(mediaCategoryId, 'en'))[0].name
-
+    // Start from root parent
+    const categoryData = (await mediaCategory.list(rootParentId, 'en'))[0]
+    const children = categoryData.children
+    const categoryName = categoryData.name
+ 
+    const rootPath = `./output/${categoryName}`
     // const tempVal = (await media.list(mediaCategoryId)).mediaRows
     // await batcher(tempVal, 10, 1000, async(row) => {
     //   try {
@@ -79,48 +108,51 @@ async function main(instance) {
     //     console.log(`Failed to download ${row.name} due to `, e)
     //   }
     // })
-    collectionObjs.push({ id: mediaCategoryId, name: categoryName, path: './output/' })
+    collectionObjs.push({ id: rootParentId, name: categoryName, parent: null, path: rootPath })
+ 
     console.log('Downloading media...')
-    parseChildren('./output/', children)
+    parseChildren(rootPath, children, categoryName)
+ 
+    // Create folders even if empty
     await Promise.all(collectionObjs.map(async obj => {
       try {
-        await mkdir(resolve(`${obj.path}/${obj.name}`))
+        await mkdir(resolve(obj.path), { recursive: true })
       } catch (e) {}
     }))
   } catch(error) {
     console.log('Failed to get category children due to ', error)
   }
-
+ 
   for (let collectionObj of collectionObjs) {
     let offset = 0;
     const limit = 10;
     let total_media = 0;
-
+ 
     do {
       const req = await media.list(collectionObj.id, 'en', offset, limit);
       const mediaRows = req.mediaRows;
       total_media = req.recordsTotal;
-
+ 
       await batcher(mediaRows, 20, 1000, async(row) => {
         try {
-          await downloadMedia(media, row, resolve(`${collectionObj.path}/${collectionObj.name}`));
+          await downloadMedia(media, row, resolve(collectionObj.path));
           console.log(`Downloaded ${row.name} to ${collectionObj.name}`);
         } catch(e) {
           console.log(`Failed to download ${row.name} to ${collectionObj.name} due to `, e);
         }
       });
-
+ 
       offset += limit;
     } while (offset < total_media);
   }
-
+ 
   console.log('Creating Zip file...')
-  await zip(resolve('./output'), resolve(`./${mediaCategoryId}.zip`))
+  await zip(resolve(`./output/${collectionObjs[0].name}`), resolve(`./${collectionObjs[0].id}.zip`))
   console.log('Deleting output folder...')
   await rm(resolve('./output'), { recursive: true, force: true })
   console.log('Finished!')
 }
-
+ 
 async function downloadMedia(media, mediaObj, folder) {
   const buffer = await media.downloadSingle(mediaObj.id, 'media')
   if (!await exists(folder)) await mkdir(folder, { recursive: true })
