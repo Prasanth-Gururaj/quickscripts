@@ -1,13 +1,28 @@
 #!/usr/bin/env node
+// const path = require('path');
+// const { resolve } = require('path')
+// const { writeFile, mkdir, rm } = require('fs/promises');
+// const { zip } = require('zip-a-folder');
+// const fetch = require('node-fetch');
+// // const fetch = global.fetch;
+// // const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+// // Local imports with relative paths
+// const { UI, exists } = require('../promptUI/UI.mjs');
+// const { Client, batcher } = require('../../../../t4apiwrapper/t4.ts/esm/index.js');
+// // const { UI, exists } = require('./promptUI/UI.mjs');
+// // const { Client, batcher } = require('./t4apiwrapper/t4.ts/esm/index.js');
+
 import path, { resolve } from 'path';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import { zip } from 'zip-a-folder';
 import fetch from 'node-fetch';
+// Local imports with relative paths
 import { UI, exists } from '../promptUI/UI.mjs';
 import { Client, batcher } from './node_modules/t4.ts/esm/index.js';
 
 const rsUrl = 'https://cms.seattleu.edu/terminalfour/rs';
 
+// Fix IIFE with proper error handling
 const run = async () => {
   try {
     while (true) {
@@ -21,73 +36,80 @@ const run = async () => {
   }
 };
 
+// Start the application
 run();
 
 async function main(instance) {
-  const config = await instance.start();
-  const { profile, mediaCategory, media } = new Client(rsUrl, config['t4_token'], 'en', fetch);
-  console.clear();
+  const config = await instance.start()
+  const { profile, mediaCategory, media } = new Client(rsUrl, config['t4_token'], 'en', fetch)
 
-  const { firstName } = await profile.get();
-  console.log(`Hello ${firstName},\n\nPlease enter the ID of the media category you'd like to download:`);
+  console.clear()
+
+  const { firstName } = await profile.get()
+  console.log(`Hello ${firstName},\n\nPlease enter the ID of the media category you'd like to download:`)
   const { mediaCategoryId } = await instance.ask([{
     name: 'mediaCategoryId', description: 'Enter media category ID, not name', required: true
-  }]);
-
-  const collectionObjs = [];
+  }])
 
   // ---------------------------
-  // Fetch selected category and its parent
+  // Get category 
   // ---------------------------
-  let parentCategory = null;
-  let selectedCategory = null;
-
+  let rootCategories = [];
   try {
-    selectedCategory = await mediaCategory.get(mediaCategoryId, 'en');
+    const selectedCategory = await mediaCategory.get(mediaCategoryId, 'en');
 
-    if (selectedCategory.parent) {
-      const parentId = selectedCategory.parent;
-      parentCategory = { id: parentId, name: `Parent_${parentId}`, path: `./output/Parent_${parentId}` };
-      collectionObjs.push(parentCategory); // parent folder only, no children
-    }
-
-    const selectedPath = `./output/${selectedCategory.name}`;
-    collectionObjs.push({ id: selectedCategory.id, name: selectedCategory.name, path: selectedPath });
+    rootCategories.push({
+      id: mediaCategoryId,
+      name: selectedCategory.name,
+      path: `./output/${selectedCategory.name}`
+    });
 
   } catch (error) {
     console.log('Failed to fetch category or parent due to ', error);
   }
 
+  const collectionObjs = [];
+
   // ---------------------------
-  // Parse selected category children recursively
+  // Parse children recursively
   // ---------------------------
   const parseChildren = (parentPath, children) => {
-    if (!children || children.length === 0) return;
     children.forEach(child => {
       const { id, name, children: childChildren } = child;
       const currentPath = `${parentPath}/${name}`;
       console.log(`Parsing ${name}...${id}....${currentPath}`);
 
+      // Push current child first
       collectionObjs.push({ id, name, path: currentPath });
 
+      // Recursively parse children if any
       if (childChildren.length > 0) parseChildren(currentPath, childChildren);
     });
   };
 
-  if (!await exists('./output/')) await mkdir('./output/', { recursive: true });
+  if (!await exists('./output/')) {
+    await mkdir('./output/', { recursive: true });
+  }
 
   try {
-    // Only parse children of the selected category
-    parseChildren(`./output/${selectedCategory.name}`, selectedCategory.children);
+    for (let cat of rootCategories) {
 
-    // Create all folders
+      // Ensure selected category itself gets downloaded
+      collectionObjs.push(cat);
+
+      const children = (await mediaCategory.list(cat.id, 'en'))[0].children;
+      console.log('Downloading media...');
+      parseChildren(cat.path, children);
+    }
+
+    // Create folders even if empty
     await Promise.all(collectionObjs.map(async obj => {
       try {
         await mkdir(resolve(obj.path), { recursive: true });
       } catch (e) {}
     }));
   } catch(error) {
-    console.log('Failed to process category children due to ', error);
+    console.log('Failed to get category children due to ', error);
   }
 
   // ---------------------------
@@ -117,10 +139,10 @@ async function main(instance) {
   }
 
   console.log('Creating Zip file...')
-  await zip(resolve('./output'), resolve(`./${mediaCategoryId}.zip`));
+  await zip(resolve('./output'), resolve(`./${mediaCategoryId}.zip`))
   console.log('Deleting output folder...')
-  await rm(resolve('./output'), { recursive: true, force: true });
-  console.log('Finished!');
+  await rm(resolve('./output'), { recursive: true, force: true })
+  console.log('Finished!')
 }
 
 async function downloadMedia(media, mediaObj, folder) {
@@ -128,3 +150,4 @@ async function downloadMedia(media, mediaObj, folder) {
   if (!await exists(folder)) await mkdir(folder, { recursive: true });
   await writeFile(`${folder}/${mediaObj.fileName}`, Buffer.from(buffer));
 }
+ 
